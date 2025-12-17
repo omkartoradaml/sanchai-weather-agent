@@ -1,55 +1,93 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
 
 from langchain_openai import ChatOpenAI
-from langchain.agents import initialize_agent, AgentType
+from langchain_core.prompts import ChatPromptTemplate
 
-from app.tools import weather_tool
+from app.weather import get_weather
 
 # Load environment variables
 load_dotenv()
 
-app = FastAPI()
+app = FastAPI(title="Weather Agent API")
 
-# Initialize LLM (OpenRouter via LangChain)
+# -------------------------
+# CORS (React → FastAPI)
+# -------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # OK for internship task
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# -------------------------
+# LLM (OpenRouter)
+# -------------------------
 llm = ChatOpenAI(
-    model=os.getenv("OPENROUTER_MODEL"),
+    model="openai/gpt-4o-mini",
     openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-    openai_api_base="https://openrouter.ai/api/v1"
+    openai_api_base="https://openrouter.ai/api/v1",
+    temperature=0,
 )
 
-# Initialize Agent
-agent = initialize_agent(
-    tools=[weather_tool],
-    llm=llm,
-    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-    verbose=True
+# -------------------------
+# Prompt for city extraction
+# -------------------------
+city_prompt = ChatPromptTemplate.from_template(
+    """
+You are an assistant that extracts city names.
+
+Return ONLY the city name.
+If no city is found, return an empty string.
+
+User query:
+{query}
+"""
 )
 
-# --------------------
-# Health Check
-# --------------------
+city_chain = city_prompt | llm
+
+# -------------------------
+# Request schema
+# -------------------------
+class AskRequest(BaseModel):
+    query: str
+
+
+# -------------------------
+# Routes
+# -------------------------
+@app.get("/")
+def root():
+    return {"message": "Weather Agent API running"}
+
+
+@app.post("/ask")
+def ask_weather(request: AskRequest):
+    # 1️⃣ Extract city using LLM
+    city_response = city_chain.invoke({"query": request.query})
+    city = city_response.content.strip()
+
+    if not city:
+        return {"error": "Could not extract city from query"}
+
+    # 2️⃣ Get weather using tool (OpenWeather API)
+    weather = get_weather(city)
+
+    if "error" in weather:
+        return weather
+
+    # 3️⃣ Structured response (frontend-friendly)
+    return {
+        "city": city,
+        "weather": weather
+    }
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-# --------------------
-# LLM Test Endpoint
-# --------------------
-@app.get("/llm-test")
-def llm_test():
-    response = llm.invoke("Say hello in one short sentence")
-    return {"response": response.content}
-
-# --------------------
-# Agent Endpoint (MAIN FEATURE)
-# --------------------
-@app.get("/ask")
-def ask(query: str):
-    """
-    Accepts natural language query.
-    If weather-related, agent uses weather tool.
-    """
-    answer = agent.run(query)
-    return {"answer": answer}

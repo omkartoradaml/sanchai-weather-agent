@@ -1,61 +1,99 @@
 import { useState } from "react";
 import "./App.css";
 
+import { MapContainer, TileLayer } from "react-leaflet";
+
+function getWeatherIcon(condition) {
+  if (!condition) return "🌍";
+  const text = condition.toLowerCase();
+
+  if (text.includes("clear")) return "☀️";
+  if (text.includes("cloud")) return "☁️";
+  if (text.includes("rain")) return "🌧";
+  if (text.includes("storm")) return "⛈";
+  if (text.includes("snow")) return "❄️";
+
+  return "🌍";
+}
+
 function App() {
   const [query, setQuery] = useState("");
-  const [answer, setAnswer] = useState("");
+  const [weather, setWeather] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const askWeather = async () => {
-    if (!query) return;
+    if (!query.trim()) return;
 
     setLoading(true);
-    setAnswer("");
+    setWeather(null);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/ask", {
+      const res = await fetch("http://127.0.0.1:8000/ask", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          query: query,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
       });
 
-      const data = await response.json();
-      setAnswer(data.answer);
-    } catch (error) {
-      setAnswer("Error connecting to backend");
-      console.error(error);
-    } finally {
-      setLoading(false);
+      const data = await res.json();
+      setWeather(data); // ✅ FIX
+    } catch {
+      setWeather({
+        city: "Error",
+        weather: {
+          temperature: "--",
+          condition: "Error",
+          description: "Unable to fetch weather",
+        },
+      });
     }
+
+    setLoading(false);
   };
 
   return (
-    <div style={{ padding: "40px", fontFamily: "Arial" }}>
-      <h1>🌤 Weather Assistant</h1>
+    <div className="map-wrapper">
+      {/* 🌍 MAP BACKGROUND */}
+      <MapContainer
+        center={[18.5204, 73.8567]}
+        zoom={5}
+        scrollWheelZoom={false}
+        className="map"
+      >
+        <TileLayer
+          attribution="© OpenStreetMap contributors"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+      </MapContainer>
 
-      <input
-        type="text"
-        placeholder="What is the weather in Pune?"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        style={{
-          padding: "10px",
-          width: "300px",
-          marginRight: "10px",
-        }}
-      />
+      {/* 🧊 GLASS UI */}
+      <div className="glass-card">
+        <div className="icon">
+          {getWeatherIcon(weather?.weather?.condition)}
+        </div>
 
-      <button onClick={askWeather} style={{ padding: "10px" }}>
-        Ask
-      </button>
+        <h1>Weather Assistant</h1>
 
-      <div style={{ marginTop: "20px" }}>
-        {loading && <p>Loading...</p>}
-        {answer && <p><strong>{answer}</strong></p>}
+        <input
+          type="text"
+          placeholder="What is the weather in Pune?"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && askWeather()}
+        />
+
+        <button onClick={askWeather} disabled={loading}>
+          {loading ? "Fetching..." : "Ask"}
+        </button>
+
+        {weather && (
+          <div className="result">
+            <strong>{weather.city}</strong>
+            <br />
+            🌡 {weather.weather.temperature}°C
+            <br />
+            ☁ {weather.weather.description}
+          </div>
+        )}
       </div>
     </div>
   );

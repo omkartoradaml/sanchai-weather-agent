@@ -2,11 +2,11 @@ import os
 import requests
 
 
-def _get_weather(city: str) -> str:
+def get_weather(city: str):
     api_key = os.getenv("WEATHER_API_KEY")
 
     if not api_key:
-        return "Weather API key is missing."
+        return {"error": "WEATHER_API_KEY not set"}
 
     url = "https://api.openweathermap.org/data/2.5/weather"
     params = {
@@ -18,10 +18,14 @@ def _get_weather(city: str) -> str:
     response = requests.get(url, params=params)
 
     if response.status_code != 200:
-        return f"Could not fetch weather for {city}."
+        return {"error": f"Weather not found for {city}"}
 
     data = response.json()
-    temp = data["main"]["temp"]
-    description = data["weather"][0]["description"]
 
-    return f"The current temperature in {city} is {temp}°C with {description}."
+    return {
+        "temperature": data["main"]["temp"],
+        "condition": data["weather"][0]["main"],
+        "description": data["weather"][0]["description"],
+        "icon": data["weather"][0]["icon"],
+    }
+
